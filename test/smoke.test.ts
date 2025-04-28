@@ -34,6 +34,7 @@ describe("Smoke", () => {
 			receiver.address,
 			[erc20.target, erc20Secondary.target],
 			ethers.parseEther("1"),
+			ethers.parseUnits("5", 17),
 		);
 	});
 
@@ -46,7 +47,7 @@ describe("Smoke", () => {
 
 		expect(await erc20.balanceOf(receiver.address)).to.be.equal(0);
 
-		await donationRelayer.relayDonations(erc20.target);
+		await donationRelayer.nonReimbursedRelay(erc20.target);
 
 		expect(await erc20.balanceOf(receiver.address)).to.be.equal(depositAmount);
 	});
@@ -57,7 +58,7 @@ describe("Smoke", () => {
 		await erc20
 			.connect(senderBob)
 			.transfer(donationRelayer.target, depositAmount);
-		await donationRelayer.relayDonations(erc20.target);
+		await donationRelayer.nonReimbursedRelay(erc20.target);
 		expect((await erc20.balanceOf(receiver.address)) - balanceBefore).to.equal(
 			depositAmount,
 		);
@@ -70,14 +71,14 @@ describe("Smoke", () => {
 		await erc20Secondary
 			.connect(senderAlice)
 			.transfer(donationRelayer.target, amountAlice);
-		await donationRelayer.relayDonations(erc20Secondary.target);
+		await donationRelayer.nonReimbursedRelay(erc20Secondary.target);
 		expect(await erc20Secondary.balanceOf(receiver.address)).to.equal(
 			amountAlice,
 		);
 		await erc20Secondary
 			.connect(senderBob)
 			.transfer(donationRelayer.target, amountBob);
-		await donationRelayer.relayDonations(erc20Secondary.target);
+		await donationRelayer.nonReimbursedRelay(erc20Secondary.target);
 		expect(await erc20Secondary.balanceOf(receiver.address)).to.equal(
 			amountAlice + amountBob,
 		);
@@ -123,5 +124,87 @@ describe("Smoke", () => {
 		await expect(donationRelayer.nonReimbursedRelay(erc20.target))
 			.to.emit(donationRelayer, "DonationRelayed")
 			.withArgs(erc20.target, depositAmount);
+	});
+
+	it("emits DonationRelayed event with correct args for native relay", async () => {
+		const receiverBalanceBefore = await ethers.provider.getBalance(
+			receiver.address,
+		);
+
+		await senderAlice.sendTransaction({
+			to: donationRelayer.target,
+			value: ethers.parseEther("5"),
+		});
+		const expectedAmount = ethers.parseEther("4"); // 5 ETH initial – 1 ETH fee
+		await expect(donationRelayer.relayDonations(ethers.ZeroAddress))
+			.to.emit(donationRelayer, "DonationRelayed")
+			.withArgs(ethers.ZeroAddress, expectedAmount);
+		const receiverBalanceAfter = await ethers.provider.getBalance(
+			receiver.address,
+		);
+
+		expect(receiverBalanceAfter - receiverBalanceBefore).to.be.equal(
+			expectedAmount,
+		);
+	});
+
+	it("emits DonationRelayed event with correct args for ERC20 relay", async () => {
+		const receiverBalanceBefore = await erc20.balanceOf(receiver.address);
+		const stableReimbursement =
+			await donationRelayer.STABLE_REIMBURSEMENT_AMOUNT();
+		const donationAmount = ethers.parseUnits("100", 18);
+		// fund contract
+		await erc20.transfer(
+			donationRelayer.target,
+			stableReimbursement + donationAmount,
+		);
+
+		await expect(donationRelayer.relayDonations(erc20.target))
+			.to.emit(donationRelayer, "DonationRelayed")
+			.withArgs(erc20.target, donationAmount);
+
+		const receiverBalanceAfter = await erc20.balanceOf(receiver.address);
+
+		expect(receiverBalanceAfter - receiverBalanceBefore).to.be.equal(
+			donationAmount,
+		);
+	});
+
+	it("Should revert if donation was too small and fee may not be covered (ERC20)", async () => {
+		const donationAmount = await donationRelayer.STABLE_REIMBURSEMENT_AMOUNT();
+
+		await erc20.transfer(donationRelayer.target, donationAmount);
+
+		await expect(
+			donationRelayer.relayDonations(erc20.target),
+		).to.be.revertedWithCustomError(donationRelayer, "FeeNotCovered");
+	});
+
+	it("Should revert if donation was too small and fee may not be covered (ETH)", async () => {
+		const donationAmount = await donationRelayer.REIMBURSEMENT_AMOUNT();
+
+		await senderAlice.sendTransaction({
+			to: donationRelayer.target,
+			value: donationAmount,
+		});
+
+		await expect(
+			donationRelayer.relayDonations(ethers.ZeroAddress),
+		).to.be.revertedWithCustomError(donationRelayer, "FeeNotCovered");
+	});
+
+	it("Should revert if relaying with fee not whitelisted asset", async () => {
+		const erc20NotListed = await (
+			await ethers.getContractFactory("TestERC20")
+		).deploy();
+
+		await erc20NotListed.transfer(
+			donationRelayer.target,
+			ethers.parseEther("1"),
+		);
+
+		await expect(
+			donationRelayer.relayDonations(erc20NotListed.target),
+		).to.be.revertedWithCustomError(donationRelayer, "AssetNotAllowed");
 	});
 });

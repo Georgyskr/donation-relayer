@@ -11,6 +11,9 @@ importers:
       hardhat-gas-reporter:
         specifier: ^2.2.3
         version: 2.2.3(hardhat@2.23.0(ts-node@10.9.2(@types/node@22.15.2)(typescript@5.8.3))(typescript@5.8.3))(typescript@5.8.3)
+      solidity-coverage:
+        specifier: ^0.8.15
+        version: 0.8.15(hardhat@2.23.0(ts-node@10.9.2(@types/node@22.15.2)(typescript@5.8.3))(typescript@5.8.3))
     devDependencies:
       '@nomicfoundation/hardhat-ethers':
         specifier: ^3.0.8

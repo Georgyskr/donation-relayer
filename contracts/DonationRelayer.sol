@@ -24,10 +24,12 @@ contract DonationRelayer {
     constructor(
         address _DONATION_RECEIVER,
         address[] memory _assets,
-        uint256 _REIMBURSEMENT_AMOUNT
+        uint256 _REIMBURSEMENT_AMOUNT,
+        uint256 _STABLE_REIMBURSEMENT_AMOUNT
     ) payable {
         DONATION_RECEIVER = _DONATION_RECEIVER;
         REIMBURSEMENT_AMOUNT = _REIMBURSEMENT_AMOUNT;
+        STABLE_REIMBURSEMENT_AMOUNT = _STABLE_REIMBURSEMENT_AMOUNT;
 
         for (uint256 i; i < _assets.length; i++) {
             allowedAssets[_assets[i]] = true;
@@ -49,7 +51,11 @@ contract DonationRelayer {
 
         // Native network currency transfer
         if (_asset == address(0)) {
-            relayAmount = address(this).balance - REIMBURSEMENT_AMOUNT;
+            relayAmount = address(this).balance;
+            if (relayAmount <= REIMBURSEMENT_AMOUNT) {
+                revert FeeNotCovered();
+            }
+            relayAmount -= REIMBURSEMENT_AMOUNT;
             if (relayAmount == 0) revert ZeroBalance();
 
             // 1) Forward entire balance except of the reimbursement
@@ -60,7 +66,7 @@ contract DonationRelayer {
         } else {
             if (!allowedAssets[_asset]) revert AssetNotAllowed();
             relayAmount = IERC20(_asset).balanceOf(address(this));
-            if (relayAmount < STABLE_REIMBURSEMENT_AMOUNT) {
+            if (relayAmount <= STABLE_REIMBURSEMENT_AMOUNT) {
                 revert FeeNotCovered();
             }
             relayAmount -= STABLE_REIMBURSEMENT_AMOUNT;
